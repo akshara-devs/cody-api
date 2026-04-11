@@ -12,6 +12,7 @@ class Settings:
         self.database_url = self._normalize_database_url(
             os.getenv("DATABASE_URL", "")
         )
+        self.internal_api_key = os.getenv("INTERNAL_API_KEY", "")
 
     @staticmethod
     def _normalize_database_url(database_url: str) -> str:

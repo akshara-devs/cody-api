@@ -1,68 +1,80 @@
 # Setup Explanation
 
-SQLAlchemy and Alembic have different jobs in this project.
+SQLAlchemy, Alembic, and Pydantic have different jobs in this project. For install commands, env vars, and HTTP examples, see the repository [README.md](../README.md). This note explains how the pieces fit together.
 
-## Why `__init__.py` Exists in Many Folders
+## Why `__init__.py` Exists in Some Folders
 
-- `__init__.py` tells Python that the folder should be treated as a package.
-- This makes imports like `from services.test_service import create_test_record` work reliably.
-- It also makes the project structure clearer when the codebase grows.
-- In some newer Python setups, imports can work without it, but adding `__init__.py` keeps the package structure explicit and avoids confusion.
-- In this project, those files are mostly there so teammates can safely organize modules by folder from the start.
+- `__init__.py` marks a directory as a Python package so imports like `from services.user_service import create_user` resolve reliably.
+- In this repo, `models/__init__.py` imports every model so one `import models` registers all tables on SQLAlchemy metadata (used by Alembic in `alembic/env.py`).
+- `schemas/__init__.py` re-exports schema classes for a tidy import surface.
+- Newer Python can use namespace packages without `__init__.py` in every folder; keeping these files makes the structure explicit as the codebase grows.
+
+## Configuration (`core/config.py`)
+
+- Loads `.env` via `python-dotenv`.
+- Exposes `settings.database_url` and `settings.internal_api_key`.
+- Normalizes `postgresql://` to `postgresql+psycopg://` so SQLAlchemy uses the installed **psycopg** v3 driver.
+- Routes that need bot authentication read the expected key from `settings.internal_api_key` (see `api/deps.py`).
 
 ## SQLAlchemy
 
-- SQLAlchemy is the Python database toolkit and ORM used by the FastAPI app.
-- It defines models such as `TestRecord` in `models/test.py`.
-- It creates the database engine and session in `db/session.py`.
-- The API and service layer use SQLAlchemy sessions to insert, query, update, and delete data.
-- In short, SQLAlchemy is used while the app is running.
+- ORM and database toolkit for the running FastAPI app.
+- Models live under `models/` (for example `User`, `TestRecord`, `Project`).
+- `db/base.py` defines the declarative `Base`; `db/session.py` creates the engine and session factory.
+- Routes obtain a session with `Depends(get_db)`; services perform commits and queries using that session.
 
 ## Pydantic
 
-- Pydantic is used for request and response schemas in `schemas/`.
-- In this project, `TestCreate` defines the expected request body for `POST /api/tests`.
-- FastAPI automatically uses that schema to validate incoming JSON before the route function runs.
-- `TestResponse` defines the shape of the JSON returned by the route.
-- In short, Pydantic defines what data should look like at the API boundary.
+- Request and response shapes live under `schemas/`.
+- Examples: `TestCreate` / `TestResponse` for `POST /api/tests`; `UserCreate` / `UserResponse` / `UserDelete` for user routes.
+- FastAPI validates JSON against these models before your route body runs; invalid input becomes `422 Unprocessable Entity`.
+- `model_config = ConfigDict(from_attributes=True)` on response models lets FastAPI serialize SQLAlchemy instances.
 
 ## Alembic
 
-- Alembic is the migration tool used together with SQLAlchemy.
-- It keeps track of schema changes over time, such as creating tables or adding columns.
-- Migration files live in `alembic/versions/`.
-- `alembic/env.py` connects Alembic to the SQLAlchemy metadata and the current `DATABASE_URL`.
-- `alembic.ini` is Alembic's configuration file and tells Alembic where the migration folder is.
-- The initial `alembic/` folder and `alembic.ini` usually come from `alembic init alembic`.
-- After generation, it is normal to edit `alembic/env.py` and review generated revision files manually.
-- In short, Alembic is used when the database structure changes.
+- Tracks and applies **schema** changes (create/alter/drop tables) over time.
+- Revision scripts are in `alembic/versions/`.
+- `alembic/env.py` sets `target_metadata = Base.metadata` and imports `models` so autogenerate sees every table.
+- `alembic.ini` points Alembic at the `alembic/` folder and baseline config; the live DB URL still comes from `DATABASE_URL` via `env.py`.
+- The `alembic/` tree is usually created once with `alembic init alembic`, then customized (especially `env.py`).
 
 ## Database URL Note
 
-- This project installs `psycopg` v3, not `psycopg2`.
-- `core/config.py` normalizes `postgresql://...` into `postgresql+psycopg://...` when reading `DATABASE_URL`.
-- This keeps the `.env` format forgiving while still using the correct SQLAlchemy driver.
+- This project uses **psycopg** v3 (`psycopg[binary]`), not `psycopg2`.
+- `.env.example` may show `postgresql+psycopg://` explicitly; plain `postgresql://` in `.env` is fine because `core/config.py` normalizes it.
+- A Railway hostname ending in `.railway.internal` is private to Railway’s network and usually will not work from a local machine unless you are on that network.
 
-## Why All Three Are Needed
+## Why SQLAlchemy, Alembic, and Pydantic Together
 
-- SQLAlchemy lets the application work with the database in Python code.
-- Alembic makes sure the real PostgreSQL schema matches the models over time.
-- Pydantic makes sure incoming and outgoing API data follows the expected structure.
+- **SQLAlchemy** — how the app reads and writes rows at runtime.
+- **Alembic** — how the real PostgreSQL schema stays in sync with the models across environments.
+- **Pydantic** — how HTTP JSON is validated and documented at the API boundary.
 
 ## Typical Workflow
 
-1. Add or change a SQLAlchemy model.
-2. Generate a migration with:
+1. Change or add a model in `models/` and export it from `models/__init__.py` if it is new.
+2. Generate a migration:
 
    ```bash
    alembic revision --autogenerate -m "message"
    ```
 
-3. Apply the migration with:
+3. Review the file under `alembic/versions/`, then apply:
 
    ```bash
    alembic upgrade head
    ```
 
-4. Define or update request/response schemas in `schemas/` when the API shape changes.
-5. Run the API and let FastAPI, Pydantic, and SQLAlchemy work together normally.
+4. Add or update `schemas/` when the public API shape changes.
+5. Implement route + service logic; restart the dev server after `.env` changes.
+
+## Team and migration hygiene
+
+- Commit everything under `alembic/versions/` so everyone shares the same history.
+- The database records the applied revision in `alembic_version`.
+- Prefer **per-developer** or **per-branch** databases for migration experiments to avoid revision mismatch.
+- If you see `Can't locate revision identified by '...'`, your DB points at a revision missing from your clone. Recover by restoring the file, resetting a disposable DB, or (only when schema already matches) `alembic stamp <revision>`. Use `alembic heads` on a clean checkout to see the current head id.
+
+## Further reading
+
+- [README.md](../README.md) — setup, environment variables, and API usage.
