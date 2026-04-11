@@ -1,10 +1,10 @@
-from typing import Annotated
-
 from fastapi import APIRouter, Body, Depends
 from sqlalchemy.orm import Session
-
 from db.session import get_db
+
+from typing import Annotated
 from schemas.test import TestCreate, TestResponse
+
 from services.test_service import create_test_record
 
 

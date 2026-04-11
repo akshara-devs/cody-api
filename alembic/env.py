@@ -5,14 +5,14 @@ from logging.config import fileConfig
 from alembic import context
 from sqlalchemy import engine_from_config, pool
 
-from core.config import settings
-from db.base import Base
-
 # Ensure Alembic can import the app packages when executed from the CLI.
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
+from core.config import settings
+from db.base import Base
+import models
 
 config = context.config
 
@@ -23,7 +23,8 @@ if settings.database_url:
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
-# Alembic reads SQLAlchemy metadata from here for autogenerate support.
+# Importing `models` ensures every model class is registered on `Base.metadata`
+# before Alembic compares metadata to the live database.
 target_metadata = Base.metadata
 
 
