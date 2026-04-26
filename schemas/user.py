@@ -33,10 +33,9 @@ class UserDelete(BaseModel):
     if(not normalized_value):
       raise ValueError("Discord user ID must not be blank.")
     if(not normalized_value.isdigit()):
-      raise ValueError("Discord useer ID must contian only digits.")
+      raise ValueError("Discord user ID must contain only digits.")
     return normalized_value
   
-
 class UserResponse(BaseModel):
   id: UUID
   discord_user_id: str
