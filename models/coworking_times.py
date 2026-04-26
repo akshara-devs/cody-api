@@ -25,6 +25,11 @@ class CoworkingTime(Base):
     ForeignKey("users.id"),
     nullable=False
   )
+  project_id: Mapped[uuid.UUID] = mapped_column(
+    UUID(as_uuid=True),
+    ForeignKey("projects.id"),
+    nullable=False
+  )
   start_time: Mapped[datetime] = mapped_column(
     DateTime,
     default=datetime.now,
